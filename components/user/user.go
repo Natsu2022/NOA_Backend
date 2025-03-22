@@ -54,7 +54,7 @@ func SendOTPEmail(email, otp string) error {
 	<html>
 		<head></head>
 		<body>
-			<h1>Hello, {{.Name}}!</h1>
+			<h1>Hello, Welcome to verify your Email !</h1>
 			<p>{{.Message}}</p>
 			<p>Your OTP is: <strong>{{.OTP}}</strong></p>
 		</body>
@@ -95,7 +95,7 @@ func SendOTPEmail(email, otp string) error {
 // SendOTP sends an OTP to the user's email and returns the OTP
 func SendOTP(w http.ResponseWriter, r *http.Request) {
 
-	if r.Method != http.MethodPost { // Allow only POST requests
+	if r.Method != http.MethodGet { // Allow only POST requests
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
@@ -178,6 +178,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	} else {
 		log.Println("User registered successfully.")
+		SendOTPEmail(email, GenerateOTP())
 	}
 
 	// Send a response

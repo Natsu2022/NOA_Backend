@@ -50,19 +50,18 @@ func main() {
 		http.HandleFunc("/sendotp", user.SendOTP)                                             //*DONE Send OTP to Email
 
 		// TODO: WebSocket route
-		http.HandleFunc("/ws", ws.HandleWebSocket)           //*DONE Handle WebSocket connection
-		http.HandleFunc("/storews", ws.HandleStoreWebSocket) //*DONE Store data from websocket
+		http.HandleFunc("/ws", ws.HandleWebSocket) //*DONE Handle WebSocket connection
+
+		//? Start MQTT client
+		go mosquitto.HandleMQTT()
 
 		// TODO: Start the server in a goroutine
 		go func() {
-			fmt.Println("Server started at Gyro Server.")
+			log.Println("Server started at Gyro Server.")
 			if err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil); err != nil {
 				log.Fatal("Error starting server:", err)
 			}
 		}()
-
-		//? Start MQTT client
-		go mosquitto.HandleMQTT()
 
 		// Wait for 'q' or 'Q' to stop the server
 		var input string

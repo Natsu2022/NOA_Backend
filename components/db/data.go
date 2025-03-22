@@ -46,8 +46,9 @@ func Connect() (bool, error) {
 
 // * store data to mongo db and use upper camel case for function name
 func StoreGyroData(data schema.GyroData) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second) // Create a context with timeout
-	defer cancel()                                                           // Defer cancel the context
+	collection = client.Database(env.GetEnv("MONGO_DB")).Collection(env.GetEnv("MONGO_COLLECTION")) // Get collection data
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)                        // Create a context with timeout
+	defer cancel()                                                                                  // Defer cancel the context
 
 	// load Bangkok timezone
 	loc, err := time.LoadLocation("Asia/Bangkok")

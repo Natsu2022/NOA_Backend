@@ -1,189 +1,113 @@
 package ws
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
-	"GOLANG_SERVER/components/db"
-	schema "GOLANG_SERVER/components/schema"
+	"GOLANG_SERVER/components/env"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gorilla/websocket"
 )
 
-// Handle WebSocket connections
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true }, // Allow all connections
-}
+var client mqtt.Client // MQTT client
 
-// Store all connected clients
-var clients = make(map[*websocket.Conn]bool)
+// WebSocket variables
+var (
+	clients      = make(map[*websocket.Conn]bool) // Connected WebSocket clients
+	clientsMutex = sync.Mutex{}                   // Mutex to protect the clients map
+	upgrader     = websocket.Upgrader{            // Upgrader for WebSocket connections
+		CheckOrigin: func(r *http.Request) bool { // CheckOrigin function to allow all connections
+			return true // Allow all connections by default
+		},
+	}
+)
 
-// Store all connected clients for storing data
-var clientsStore = make(map[*websocket.Conn]bool)
-
-var DeviceAdd = "test"
-
-// Handle a WebSocket connection
+// WebSocket Multi cliend handler
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// Upgrade the connection to a WebSocket connection
+	// Upgrade the HTTP connection to a WebSocket connection
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Error upgrading connection to WebSocket:", err)
 		return
 	}
+	defer conn.Close()
 
-	// Register the client
+	// Set a ping handler to keep the connection alive
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	// Add the client to the clients map
+	clientsMutex.Lock()
 	clients[conn] = true
+	clientsMutex.Unlock()
 
-	// * get message from client
-	_, message, err := conn.ReadMessage()
-	if err != nil {
-		log.Println("Error reading message from client:", err)
-		return
-	}
+	// Log the new connection
+	log.Println("New WebSocket client connected.")
 
-	var req schema.GyroData
-	if err := json.Unmarshal(message, &req); err != nil {
-		log.Println("Error unmarshaling message:", err)
-		return
-	}
-	// ! Not add checking data yet : waiting for next time.
-	fmt.Println("Message from client:", string(req.DeviceAddress))
+	// Create a channel to receive data from MQTT
+	dataChan := make(chan []byte)
 
-	// * change device address
-	DeviceAdd = req.DeviceAddress
+	// Start the MQTT subscription in a separate goroutine
+	go SubscribeMQTTTopic(dataChan)
 
-	// Log the number of clients
-	fmt.Println("Number of clients:", len(clients))
-
-	// Wait for a message from the client
+	// Wait for messages from the MQTT client
 	for {
-		// Send the message to all clients
-		for client := range clients {
-			// * get data from database
-			data, err := db.GetGyroDataByDeviceAddressLatest(DeviceAdd)
-			if err != nil {
-				// log.Println("Error getting data from database:", err)
-				continue
-			}
+		// Receive data from the channel
+		data := <-dataChan
 
-			jsonData, err := json.Marshal(data)
-			if err != nil {
-				log.Println("Error marshaling data to JSON:", err)
-				continue
-			}
-			if err := client.WriteMessage(websocket.TextMessage, jsonData); err != nil {
-				log.Println("Error writing message to client:", err)
-				log.Println("Closing client connection...")
-				client.Close()
-				delete(clients, client)
-			}
-
-			// * delay 1 second
-			time.Sleep(1 * time.Second)
-		}
+		// Broadcast the message to all WebSocket clients
+		broadcastMessage(data)
 	}
 }
 
-// Handle a WebSocket connection for storing data
-func HandleStoreWebSocket(w http.ResponseWriter, r *http.Request) {
-	// Upgrade the connection to a WebSocket connection
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("Error upgrading connection to WebSocket:", err)
-		return
-	}
+// Broadcast message to all WebSocket clients
+func broadcastMessage(data []byte) {
+	// Iterate over all clients
+	clientsMutex.Lock()
+	for conn := range clients {
+		// get data from func SubscribeMQTTTopic
+		// SubscribeMQTTTopic()
 
-	// * disconnect client if there is already a client connected
-	if len(clientsStore) > 0 {
-		log.Println("Client already connected!")
-		conn.Close()
-		return
-	}
-
-	// Register the client
-	clientsStore[conn] = true
-
-	if len(clientsStore) == 1 {
-		// Wait for a message from the client
-		for {
-			// Read the message from the client
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				log.Println("Disconnected from store client")
-				delete(clientsStore, conn)
-				break
-			}
-
-			// Store the data in the database
-			var data schema.GyroData
-			if err := json.Unmarshal(message, &data); err != nil {
-				log.Println("Error unmarshaling message:", err)
-				continue
-			}
-			if _, err := db.StoreGyroData(data); err != nil {
-				log.Println("Error storing data in database:", err)
-				continue
-			}
-
-			resmes := []byte(`{"message": "Data stored!"}`)
-
-			// Send the message to all clients
-			for client := range clientsStore {
-				if err := client.WriteMessage(websocket.TextMessage, resmes); err != nil {
-					log.Println("Error writing message to client:", err)
-					log.Println("Closing client connection...")
-					client.Close()
-					delete(clientsStore, client)
-				}
-			}
+		// Process the message and store it in the database
+		// Write the message to the client
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Println("Error writing message to WebSocket client:", err)
+			conn.Close()
+			delete(clients, conn)
 		}
 	}
+	clientsMutex.Unlock()
 }
 
-// Handle a WebSocket connection for getting data
-func handleWebSocketGetData(w http.ResponseWriter, r *http.Request) {
-	// Upgrade the connection to a WebSocket connection
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("Error upgrading connection to WebSocket:", err)
-		return
+func SubscribeMQTTTopic(dataChan chan<- []byte) {
+	// MQTT topic
+	opts := mqtt.NewClientOptions().AddBroker(env.GetEnv("MQTT_BROKER"))
+	opts.SetClientID(env.GetEnv("MQTT_CLIENT_ID"))
+	opts.SetUsername(env.GetEnv("MQTT_USERNAME"))
+	opts.SetPassword(env.GetEnv("MQTT_PASSWORD"))
+	client = mqtt.NewClient(opts)
+
+	// Connect to the MQTT broker
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		log.Fatal("Error connecting to MQTT broker:", token.Error())
 	}
 
-	// Register the client
-	clients[conn] = true
+	// Subscribe to the topic
+	if token := client.Subscribe("vibration", 1, func(client mqtt.Client, msg mqtt.Message) {
+		// log.Printf("Sub topic: %s\n", msg.Topic())
 
-	// Log the number of clients
-	fmt.Println("Number of clients:", len(clients))
+		// Send the message payload to the channel
+		dataChan <- msg.Payload()
 
-	// Wait for a message from the client
-	for {
-		// Send the message to all clients
-		for client := range clients {
-			// * get data from database
-			data, err := db.GetGyroDataByDeviceAddressLatest(DeviceAdd)
-			if err != nil {
-				// log.Println("Error getting data from database:", err)
-				continue
-			}
-
-			jsonData, err := json.Marshal(data)
-			if err != nil {
-				log.Println("Error marshaling data to JSON:", err)
-				continue
-			}
-			if err := client.WriteMessage(websocket.TextMessage, jsonData); err != nil {
-				log.Println("Error writing message to client:", err)
-				log.Println("Closing client connection...")
-				client.Close()
-				delete(clients, client)
-			}
-
-			// * delay 1 second
-			time.Sleep(1 * time.Second)
-		}
+	}); token.Wait() && token.Error() != nil {
+		log.Fatal("Error subscribing to topic:", token.Error())
 	}
+
+	log.Println("MQTT client connected and subscribed to topic.")
 }
