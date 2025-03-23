@@ -35,6 +35,8 @@ func SendOTP(w http.ResponseWriter, r *http.Request) {
 	if err := SendOTPEmail(email, otp); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	} else {
+		SaveOTP(email, otp)
 	}
 
 	// Send a response

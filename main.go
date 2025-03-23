@@ -49,7 +49,7 @@ func main() {
 		http.HandleFunc("/login", user.Login)                                                 //*DONE login user by Email and Password
 		http.HandleFunc("/sendotp", user.SendOTP)                                             //*DONE Send OTP to Email
 		http.HandleFunc("/forgotpassword", user.ForgotPasswordReq)                            //*DONE Forgot Password
-		http.HandleFunc("/verifyotp", user.VerifyOTP)                                         //*TODO Verify OTP
+		http.HandleFunc("/verifyotp", user.VerifyOTP)                                         //*DONE Verify OTP
 
 		// TODO: WebSocket route
 		http.HandleFunc("/ws", ws.HandleWebSocket) //*DONE Handle WebSocket connection
