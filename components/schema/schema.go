@@ -27,6 +27,12 @@ type PasswordRequest struct {
 }
 
 type User struct {
-	Email    string `json:"Email"`
-	Password string `json:"Password"`
+	ID       string `bson:"id,omitempty"` // User ID
+	Email    string `bson:"email"`        // User email
+	Password string `bson:"password"`     // User password
+}
+
+type Account struct {
+	ID  string `bson:"id,omitempty"` // User ID
+	OTP string `bson:"otp"`          // OTP
 }
