@@ -37,6 +37,9 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		password = userDetails["Password"]
 	}
 
+	// Declare otp variable outside the if block
+	var otp string
+
 	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -56,15 +59,18 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	} else {
 		log.Println("User registered successfully.")
-		// Send OTP to the user
-		otp := GenerateOTP()
+		// Generate OTP and assign it to the otp variable
+		otp = GenerateOTP()
 		SendOTPEmail(email, otp)
 		// Save the OTP in the database
 		SaveOTP(email, otp)
 	}
 
 	// Send a response
-	response := map[string]string{"message": "User registered successfully. Please check your email for the OTP."}
+	response := map[string]string{
+		"message": "User registered successfully. Please check your email for the OTP.",
+		"otp":     otp,
+	}
 	log.Println("User registered successfully.")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
